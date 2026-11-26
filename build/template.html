@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Laakkwartier in 3D</title>
+<style>
+  :root {
+    --paper: #f4f0e8;
+    --paper-deep: #d9d2c4;
+    --ink: #2b2622;
+    --ink-soft: #6f675e;
+    --line: rgba(43, 38, 34, .14);
+    --card: rgba(252, 250, 246, .86);
+    --brick: #b4532a;
+    --water: #3f7f9c;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    color: var(--ink);
+    background: radial-gradient(120% 90% at 50% 20%, var(--sky-a, #f7f3ec) 0%, var(--sky-b, #d9d2c4) 100%);
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  canvas#scene:active { cursor: grabbing; }
+
+  #labels { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+  .lbl {
+    position: absolute; left: 0; top: 0; white-space: nowrap; will-change: transform; opacity: 0;
+    font-size: 11px; line-height: 1; color: var(--ink);
+    text-shadow: 0 0 3px var(--paper), 0 0 3px var(--paper), 0 0 6px var(--paper);
+    transition: opacity .18s;
+  }
+  .lbl.street { font-weight: 550; letter-spacing: .01em; }
+  .lbl.water { font-style: italic; color: var(--water); font-family: ui-serif, Georgia, serif; font-size: 12px; }
+  .lbl.hood { padding: 5px 8px 5px 10px; border-radius: 99px; background: rgba(252, 250, 246, .9); box-shadow: 0 2px 8px -3px rgba(43, 38, 34, .5); font-size: 11px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--brick); text-shadow: none; }
+  .lbl.ctx { font-size: 10px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); }
+  .lbl.station { font-weight: 700; font-size: 12px; }
+  .lbl.station::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 50%; background: var(--ink); vertical-align: 1px; }
+
+  .panel {
+    position: fixed; top: 16px; left: 16px; width: 292px; max-height: calc(100% - 32px); overflow: auto;
+    padding: 18px 18px 14px; border-radius: 14px; background: var(--card);
+    border: 1px solid var(--line); backdrop-filter: blur(14px) saturate(1.2); -webkit-backdrop-filter: blur(14px) saturate(1.2);
+    box-shadow: 0 10px 40px -18px rgba(43, 38, 34, .45);
+  }
+  .eyebrow { font-size: 10.5px; font-weight: 650; letter-spacing: .16em; text-transform: uppercase; color: var(--brick); }
+  h1 { margin: 4px 0 2px; font: 600 30px/1.05 ui-serif, "Iowan Old Style", Georgia, serif; letter-spacing: -.01em; }
+  .sub { margin: 0 0 14px; font-size: 12.5px; line-height: 1.45; color: var(--ink-soft); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 0 0 16px; padding: 12px 0; border-block: 1px solid var(--line); }
+  .stats div { min-width: 0; }
+  .stats b { display: block; font-size: 19px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+  .stats span { font-size: 11px; color: var(--ink-soft); }
+  .field { margin-bottom: 14px; }
+  .field > label, .field > .lab { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+  .field output { color: var(--ink); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); padding: 3px; border-radius: 9px; background: rgba(43, 38, 34, .08); }
+  .seg button {
+    appearance: none; border: 0; padding: 7px 4px; border-radius: 7px; background: none; color: var(--ink-soft);
+    font: inherit; font-size: 12.5px; font-weight: 550; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(43, 38, 34, .2); }
+  .seg button:focus-visible, .chk input:focus-visible, .icon:focus-visible, input[type=range]:focus-visible { outline: 2px solid var(--brick); outline-offset: 2px; }
+  #legend { display: none; margin-top: 9px; }
+  #legend.on { display: block; }
+  #legend .bar { display: flex; height: 9px; border-radius: 3px; overflow: hidden; }
+  #legend .bar i { flex: 1; }
+  #legend .ticks { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10.5px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; margin: 0; accent-color: var(--brick); }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 12px; }
+  .flow { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .flow li { display: flex; align-items: center; gap: 8px; }
+  .flow i { width: 22px; height: 6px; border-radius: 3px; }
+  .flow span { margin-left: auto; color: var(--ink-soft); }
+  .note { margin: 7px 0 0; font-size: 10.5px; line-height: 1.45; color: var(--ink-soft); }
+  #traffic-field.off .flow, #traffic-field.off .note { opacity: .4; }
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; cursor: pointer; }
+  .chk input { accent-color: var(--brick); margin: 0; }
+  .src { margin: 0; padding-top: 10px; border-top: 1px solid var(--line); font-size: 10.5px; line-height: 1.5; color: var(--ink-soft); }
+  .src a { color: inherit; }
+
+  .tools { position: fixed; top: 16px; right: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .icon {
+    width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer;
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 6px 20px -12px rgba(43, 38, 34, .5);
+  }
+  .icon svg { display: block; }
+  #needle { transform-origin: 50% 50%; }
+
+  #tip {
+    position: fixed; left: 0; top: 0; padding: 7px 10px; border-radius: 8px; pointer-events: none; opacity: 0;
+    background: rgba(43, 38, 34, .92); color: #fbf8f2; font-size: 12px; line-height: 1.35; white-space: nowrap;
+    transition: opacity .12s; font-variant-numeric: tabular-nums;
+  }
+  #tip b { font-weight: 600; }
+  #tip span { color: #cfc6b8; }
+  .hint { position: fixed; right: 16px; bottom: 14px; font-size: 11px; color: var(--ink-soft); pointer-events: none; }
+  #boot { position: fixed; inset: 0; display: grid; place-items: center; font-size: 13px; color: var(--ink-soft); background: var(--paper); transition: opacity .5s; }
+  #boot.done { opacity: 0; pointer-events: none; }
+
+  @media (max-width: 640px) {
+    .panel { top: auto; bottom: 0; left: 0; width: 100%; max-height: 46%; border-radius: 16px 16px 0 0; padding: 14px 16px calc(10px + env(safe-area-inset-bottom)); }
+    h1 { font-size: 24px; }
+    .sub, .hint, .src { display: none; }
+    .stats { grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; padding: 9px 0; }
+    .stats b { font-size: 15px; }
+    .stats span { font-size: 10px; }
+    .field { margin-bottom: 10px; }
+    .tools { top: 12px; right: 12px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene" aria-label="Interactive 3D model of Laakkwartier, The Hague"></canvas>
+<div id="labels" aria-hidden="true"></div>
+
+<aside class="panel">
+  <div class="eyebrow">Den Haag · Stadsdeel Laak</div>
+  <h1>Laakkwartier</h1>
+  <p class="sub">A brick district in the south-east of The Hague, built mostly in the 1920s and 1930s. Every block is a real footprint at its measured height.</p>
+  <div class="stats">
+    <div><b id="s-b">–</b><span>buildings</span></div>
+    <div><b id="s-p">–</b><span>residents (2023)</span></div>
+    <div><b id="s-y">–</b><span>median year built</span></div>
+    <div><b id="s-a">–</b><span>hectares</span></div>
+  </div>
+  <div class="field">
+    <div class="lab">Colour by</div>
+    <div class="seg" id="mode">
+      <button type="button" data-mode="model" aria-pressed="true">Model</button>
+      <button type="button" data-mode="year" aria-pressed="false">Year built</button>
+      <button type="button" data-mode="height" aria-pressed="false">Height</button>
+    </div>
+    <div id="legend"><div class="bar"></div><div class="ticks"></div></div>
+  </div>
+  <div class="field">
+    <label for="sun">Sun, 21 June <output id="sun-out">16:30</output></label>
+    <input id="sun" type="range" min="6" max="21.5" step="0.25" value="16.5">
+  </div>
+  <div class="field" id="traffic-field">
+    <div class="lab">Traffic <output id="cars-out"></output></div>
+    <ul class="flow">
+      <li><i style="background:#d93a2b"></i>High <span>over 12,000 a day</span></li>
+      <li><i style="background:#f0bd27"></i>Moderate <span>4,000 to 12,000</span></li>
+      <li><i style="background:#3fa85a"></i>Low <span>under 4,000</span></li>
+    </ul>
+    <p class="note">Modelled motor vehicles per weekday. White streets have no data. Each car is an illustration, not a tracked vehicle.</p>
+  </div>
+  <div class="checks">
+    <label class="chk"><input type="checkbox" id="t-traffic" checked> Traffic</label>
+    <label class="chk"><input type="checkbox" id="t-labels" checked> Labels</label>
+    <label class="chk"><input type="checkbox" id="t-trees" checked> Trees</label>
+    <label class="chk"><input type="checkbox" id="t-spin" checked> Rotate</label>
+  </div>
+  <p class="src">Buildings: <a href="https://3dbag.nl" target="_blank" rel="noopener">3DBAG</a> LoD 1.3 (CC BY 4.0). Boundary and residents: CBS Wijken en Buurten 2023. Traffic: Gemeente Den Haag traffic model 2017. Streets, water, trees: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.</p>
+</aside>
+
+<div class="tools">
+  <button class="icon" id="north" type="button" title="Face north" aria-label="Face north">
+    <svg width="26" height="26" viewBox="0 0 26 26"><g id="needle"><path d="M13 3 L17 13 H9 Z" fill="#b4532a"/><path d="M13 23 L9 13 H17 Z" fill="#b9b0a3"/></g></svg>
+  </button>
+  <button class="icon" id="reset" type="button" title="Reset view" aria-label="Reset view">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 10 3l7 6.5"/><path d="M5 8.5V17h10V8.5"/></svg>
+  </button>
+</div>
+
+<div id="tip" role="status"></div>
+<div class="hint">Drag to orbit · right-drag to pan · scroll to zoom</div>
+<div id="boot">Building the model…</div>
+
+<script type="application/json" id="data">/*__DATA__*/</script>
+<script type="text/plain" id="three-src">/*__THREE__*/</script>
+<script type="text/plain" id="orbit-src">/*__ORBIT__*/</script>
+
+<script type="module">
+const text = id => document.getElementById(id).textContent
+const moduleURL = code => URL.createObjectURL(new Blob([code], { type: 'text/javascript' }))
+const threeURL = moduleURL(text('three-src'))
+const THREE = await import(threeURL)
+const { OrbitControls } = await import(moduleURL(text('orbit-src').replace(/from\s+'three'/, `from '${threeURL}'`)))
+const D = JSON.parse(text('data'))
+const $ = id => document.getElementById(id)
+
+const [RX0, RY0, RX1, RY1] = D.meta.rect
+const C = {
+  ground: '#e4dfd3', hood: '#efe9dc', side: '#cfc8ba', road: '#fbf9f4', service: '#f2eee5', ped: '#f5edda',
+  cycle: '#dcae98', water: '#a3c7d8', green: '#c7d5a6', pitch: '#b3cb92', rail: '#5f5a55', tram: '#9a938a',
+  outline: '#b4532a', context: '#f5f2eb', unknown: '#bdb6aa',
+}
+const BRICK = ['#b5573a', '#c06a45', '#a84e36', '#c98a5e', '#9c4a3a', '#d09a6c', '#b9643f', '#ad5b44']
+const YEAR = { stops: [1920, 1930, 1940, 1960, 1980, 2000, 2010], colors: ['#2c115f', '#5b1a7e', '#8c2981', '#b73779', '#de4968', '#f7705c', '#fe9f6d', '#fecf92'] }
+const HEIGHT = { stops: [6, 9, 12, 15, 20, 30, 50], colors: ['#edf3e0', '#cfe6c5', '#a4d5b6', '#73c0b3', '#4aa5b2', '#3586a8', '#2f6498', '#2b3f7e'] }
+
+const dec = a => {
+  const out = new Array(a.length / 2)
+  let x = 0, y = 0
+  for (let i = 0; i < out.length; i++) {
+    x += a[2 * i]; y += a[2 * i + 1]
+    out[i] = new THREE.Vector2(x / 10, y / 10)
+  }
+  return out
+}
+const hash = n => { const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s) }
+const cross = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+
+// ---- renderer -------------------------------------------------------------
+const canvas = $('scene')
+let renderer
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
+} catch (e) {
+  $('boot').textContent = 'This browser cannot start WebGL, so the model cannot be shown.'
+  throw e
+}
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+renderer.shadowMap.autoUpdate = false
+renderer.localClippingEnabled = true
+
+const scene = new THREE.Scene()
+const camera = new THREE.PerspectiveCamera(38, 1, 10, 20000)
+const HOME = new THREE.Vector3(-1300, 1650, 2550).multiplyScalar(innerWidth < innerHeight ? 1.7 : 1)
+camera.position.copy(HOME)
+
+const controls = new OrbitControls(camera, canvas)
+controls.enableDamping = true
+controls.dampingFactor = 0.08
+controls.maxPolarAngle = 1.48
+controls.minDistance = 80
+controls.maxDistance = 6500
+controls.zoomToCursor = true
+controls.autoRotateSpeed = 0.35
+controls.autoRotate = !matchMedia('(prefers-reduced-motion: reduce)').matches
+$('t-spin').checked = controls.autoRotate
+
+const hemi = new THREE.HemisphereLight('#ffffff', '#b9ad9a', 1.3)
+const sun = new THREE.DirectionalLight('#fff4e2', 2.6)
+sun.castShadow = true
+sun.shadow.mapSize.set(4096, 4096)
+const R = Math.hypot(RX1 - RX0, RY1 - RY0) / 2 + 40
+Object.assign(sun.shadow.camera, { left: -R, right: R, top: R, bottom: -R, near: 200, far: 7000 })
+sun.shadow.bias = -0.0004
+sun.shadow.normalBias = 0.8
+scene.add(hemi, sun, sun.target)
+
+// ---- flat map layers ------------------------------------------------------
+const clip = [
+  new THREE.Plane(new THREE.Vector3(1, 0, 0), -RX0), new THREE.Plane(new THREE.Vector3(-1, 0, 0), RX1),
+  new THREE.Plane(new THREE.Vector3(0, 0, 1), RY1), new THREE.Plane(new THREE.Vector3(0, 0, -1), -RY0),
+]
+class Flat {
+  pos = []; idx = []
+  vert(p) { this.pos.push(p.x, 0, -p.y); return this.pos.length / 3 - 1 }
+  tri(pts, a, b, c, base) {
+    if (cross(pts[a], pts[b], pts[c]) < 0) [b, c] = [c, b]
+    this.idx.push(base + a, base + b, base + c)
+  }
+  poly(rings) {
+    const [outer, ...holes] = rings.map(dec).filter(r => r.length >= 3)
+    if (!outer) return
+    const all = outer.concat(...holes)
+    const base = this.pos.length / 3
+    for (const p of all) this.vert(p)
+    for (const [a, b, c] of THREE.ShapeUtils.triangulateShape(outer, holes)) this.tri(all, a, b, c, base)
+  }
+  ribbon(pts, w, closed = false) {
+    const n = pts.length
+    if (n < 2) return
+    const side = []
+    for (let i = 0; i < n; i++) {
+      const a = pts[closed ? (i - 1 + n) % n : Math.max(i - 1, 0)]
+      const b = pts[closed ? (i + 1) % n : Math.min(i + 1, n - 1)]
+      const p = pts[i]
+      const d0 = p.clone().sub(a), d1 = b.clone().sub(p)
+      if (d0.lengthSq() < 1e-8) d0.copy(d1)
+      if (d1.lengthSq() < 1e-8) d1.copy(d0)
+      d0.normalize(); d1.normalize()
+      const n0 = new THREE.Vector2(-d0.y, d0.x)
+      const m = n0.clone().add(new THREE.Vector2(-d1.y, d1.x))
+      if (m.lengthSq() < 1e-6) m.copy(n0)
+      m.normalize().multiplyScalar(w / 2 / Math.max(0.45, m.dot(n0)))
+      side.push(p.clone().add(m), p.clone().sub(m))
+    }
+    const base = this.pos.length / 3
+    for (const p of side) this.vert(p)
+    const last = closed ? n : n - 1
+    for (let i = 0; i < last; i++) {
+      const j = (i + 1) % n
+      this.tri(side, 2 * i, 2 * i + 1, 2 * j + 1, base)
+      this.tri(side, 2 * i, 2 * j + 1, 2 * j, base)
+    }
+  }
+  mesh(color, order) {
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.Float32BufferAttribute(this.pos, 3))
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(new Float32Array(this.pos.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3))
+    g.setIndex(this.idx)
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color, depthWrite: false, clippingPlanes: clip }))
+    m.renderOrder = order
+    m.receiveShadow = true
+    scene.add(m)
+    return m
+  }
+}
+const layer = (color, order, fill) => { const f = new Flat(); fill(f); return f.mesh(color, order) }
+
+const W = RX1 - RX0, Hh = RY1 - RY0
+const plinth = new THREE.Mesh(
+  new THREE.BoxGeometry(W, 36, Hh),
+  [C.side, C.side, C.ground, C.side, C.side, C.side].map(color => new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 4 })),
+)
+plinth.position.set((RX0 + RX1) / 2, -18, -(RY0 + RY1) / 2)
+plinth.receiveShadow = true
+scene.add(plinth)
+
+layer(C.hood, 1, f => D.hood.forEach(p => f.poly(p)))
+layer(C.green, 2, f => D.green.forEach(p => f.poly(p)))
+layer(C.pitch, 3, f => D.pitch.forEach(p => f.poly(p)))
+layer(C.water, 4, f => { D.water.forEach(p => f.poly(p)); D.waterlines.forEach(l => f.ribbon(dec(l), 2.4)) })
+layer(C.service, 5, f => (D.roads.f || []).forEach(l => f.ribbon(dec(l), 3.4)))
+layer(C.ped, 5, f => (D.roads.e || []).forEach(l => f.ribbon(dec(l), 5)))
+layer(C.road, 6, f => Object.entries({ a: 14, b: 11, c: 9, d: 6.5 }).forEach(([k, w]) => (D.roads[k] || []).forEach(l => f.ribbon(dec(l), w))))
+layer(C.cycle, 7, f => (D.roads.g || []).forEach(l => f.ribbon(dec(l), 2.2)))
+layer(C.tram, 8, f => D.tram.forEach(l => f.ribbon(dec(l), 1.3)))
+layer(C.rail, 8, f => D.rail.forEach(l => f.ribbon(dec(l), 1.8)))
+layer(C.outline, 9, f => D.hood.forEach(p => p.forEach(r => f.ribbon(dec(r), 3, true))))
+
+// ---- traffic --------------------------------------------------------------
+const FLOW = ['#3fa85a', '#f0bd27', '#d93a2b']
+const flowClass = load => (load < 40 ? 0 : load < 120 ? 1 : 2)
+const flowLayers = [new Flat(), new Flat(), new Flat()]
+const paths = []
+for (const [oneway, kmh, width, coords, loads] of D.traffic) {
+  const pts = dec(coords)
+  const cum = [0]
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + pts[i].distanceTo(pts[i - 1]))
+  let start = 0, total = 0
+  for (let i = 0; i < pts.length - 1; i++) {
+    const c = flowClass(Math.max(loads[i], loads[i + 1]))
+    total += (loads[i] + loads[i + 1]) / 2 * (cum[i + 1] - cum[i])
+    const next = i + 2 < pts.length ? flowClass(Math.max(loads[i + 1], loads[i + 2])) : -1
+    if (next !== c) { flowLayers[c].ribbon(pts.slice(start, i + 2), width); start = i + 1 }
+  }
+  const len = cum.at(-1)
+  paths.push({ pts, cum, len, oneway, width, speed: kmh / 3.6, load: total / len * 100 })
+}
+const flowMeshes = flowLayers.map((f, i) => f.mesh(FLOW[i], 7))
+
+// A daytime hour carries about 6% of the daily volume; cars on a stretch = hourly flow / speed.
+const cars = []
+for (const [pi, p] of paths.entries()) {
+  const cls = flowClass(p.load / 100)
+  const v = p.speed * [1, 0.8, 0.55][cls]
+  const perDir = p.load * 0.06 / (v * 3.6) * (p.len / 1000) / (p.oneway ? 1 : 2)
+  for (const dir of p.oneway ? [1] : [1, -1]) {
+    const n = Math.floor(perDir + hash(pi * 7.3 + dir))
+    const side = p.oneway ? 0 : Math.min(2.6, p.width / 4.6)
+    for (let k = 0; k < n; k++) cars.push({ p, dir, v, side, s: (k + 0.2 + 0.6 * hash(cars.length)) / n * p.len })
+  }
+}
+const carGeo = (() => {
+  const body = new THREE.BoxGeometry(1.8, 0.8, 4.3).translate(0, 0.65, 0).toNonIndexed()
+  const cabin = new THREE.BoxGeometry(1.6, 0.6, 2.2).translate(0, 1.35, -0.2).toNonIndexed()
+  const g = new THREE.BufferGeometry()
+  for (const name of ['position', 'normal']) {
+    g.setAttribute(name, new THREE.Float32BufferAttribute([...body.attributes[name].array, ...cabin.attributes[name].array], 3))
+  }
+  return g
+})()
+const carMesh = new THREE.InstancedMesh(carGeo, new THREE.MeshLambertMaterial(), Math.max(1, cars.length))
+carMesh.count = cars.length
+carMesh.frustumCulled = false
+carMesh.renderOrder = 20
+{
+  const paint = ['#f6f5f1', '#f6f5f1', '#d5d7da', '#9aa0a6', '#2e3238', '#2e3238', '#27496d', '#8f2420']
+  const c = new THREE.Color()
+  cars.forEach((_, i) => carMesh.setColorAt(i, c.set(paint[Math.floor(hash(i + 3.1) * paint.length)])))
+}
+scene.add(carMesh)
+const carM = new THREE.Matrix4(), carQ = new THREE.Quaternion(), carS = new THREE.Vector3(), carT = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0)
+function moveCars(dt) {
+  const size = Math.min(2.2, Math.max(1, camera.position.distanceTo(controls.target) / 800))
+  for (let i = 0; i < cars.length; i++) {
+    const c = cars[i], { pts, cum, len } = c.p
+    c.s = (c.s + c.v * dt) % len
+    const at = c.dir > 0 ? c.s : len - c.s
+    let lo = 0, hi = cum.length - 2
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (cum[mid] <= at) lo = mid; else hi = mid - 1 }
+    const a = pts[lo], b = pts[lo + 1], seg = cum[lo + 1] - cum[lo] || 1, t = (at - cum[lo]) / seg
+    const fx = (b.x - a.x) / seg * c.dir, fz = -(b.y - a.y) / seg * c.dir
+    const fade = Math.min(1, c.s / 10, (len - c.s) / 10) * size
+    carT.set(a.x + (b.x - a.x) * t - fz * c.side, 0.05, -(a.y + (b.y - a.y) * t) + fx * c.side)
+    carQ.setFromAxisAngle(UP, Math.atan2(fx, fz))
+    carM.compose(carT, carQ, carS.setScalar(Math.max(fade, 1e-4)))
+    carMesh.setMatrixAt(i, carM)
+  }
+  carMesh.instanceMatrix.needsUpdate = true
+}
+
+// ---- buildings ------------------------------------------------------------
+const CELL = 320
+const chunks = new Map()
+let pand = -1, chunk
+for (const rec of D.b) {
+  const rings = rec.slice(3).map(dec)
+  const outer = rings[0], holes = rings.slice(1)
+  if (outer.length < 3) continue
+  if (!(rec[2] & 2) || !chunk) {
+    pand++
+    const key = Math.floor(outer[0].x / CELL) + ',' + Math.floor(outer[0].y / CELL)
+    if (!chunks.has(key)) chunks.set(key, { pos: [], nor: [], idx: [], parts: [] })
+    chunk = chunks.get(key)
+  }
+  if (THREE.ShapeUtils.isClockWise(outer)) outer.reverse()
+  for (const h of holes) if (!THREE.ShapeUtils.isClockWise(h)) h.reverse()
+  const { pos, nor, idx } = chunk
+  const h = rec[0] / 10, v0 = pos.length / 3, i0 = idx.length
+  const all = outer.concat(...holes)
+  for (const p of all) { pos.push(p.x, h, -p.y); nor.push(0, 1, 0) }
+  for (let [a, b, c] of THREE.ShapeUtils.triangulateShape(outer, holes)) {
+    if (cross(all[a], all[b], all[c]) < 0) [b, c] = [c, b]
+    idx.push(v0 + a, v0 + b, v0 + c)
+  }
+  const vr = pos.length / 3
+  for (const ring of [outer, ...holes]) {
+    for (let i = 0; i < ring.length; i++) {
+      const p = ring[i], q = ring[(i + 1) % ring.length]
+      const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy)
+      if (L < 1e-4) continue
+      const b = pos.length / 3
+      pos.push(p.x, 0, -p.y, q.x, 0, -q.y, q.x, h, -q.y, p.x, h, -p.y)
+      for (let k = 0; k < 4; k++) nor.push(dy / L, 0, dx / L)
+      idx.push(b, b + 1, b + 2, b, b + 2, b + 3)
+    }
+  }
+  chunk.parts.push({ v0, vr, v1: pos.length / 3, i0, h, yr: rec[1], inside: rec[2] & 1, pand })
+}
+
+const bMat = new THREE.MeshLambertMaterial({ vertexColors: true })
+const bMeshes = []
+for (const ch of chunks.values()) {
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(ch.pos, 3))
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(ch.nor, 3))
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(ch.pos.length), 3))
+  g.setIndex(ch.idx)
+  const m = new THREE.Mesh(g, bMat)
+  m.castShadow = m.receiveShadow = true
+  m.renderOrder = 20
+  m.userData = ch
+  ch.color = g.attributes.color
+  ch.pos = ch.nor = ch.idx = null
+  scene.add(m)
+  bMeshes.push(m)
+}
+
+const tmp = new THREE.Color(), white = new THREE.Color('#ffffff')
+const ramp = (r, v) => { let i = 0; while (i < r.stops.length && v >= r.stops[i]) i++; return r.colors[i] }
+let mode = 'model'
+function baseColor(p, out) {
+  if (mode === 'model') out.set(p.inside ? BRICK[Math.floor(hash(p.pand) * BRICK.length)] : C.context)
+  else {
+    if (mode === 'year') out.set(p.yr > 1500 ? ramp(YEAR, p.yr) : C.unknown)
+    else out.set(ramp(HEIGHT, p.h))
+    if (!p.inside) out.lerp(white, 0.62)
+  }
+  return out
+}
+function paintPart(ch, p, lift = 0) {
+  baseColor(p, tmp)
+  if (lift) tmp.lerp(white, lift)
+  const a = ch.color.array
+  const roof = mode === 'model' && p.inside ? 0.2 : 0.06
+  const rr = tmp.r + (1 - tmp.r) * roof, rg = tmp.g + (1 - tmp.g) * roof, rb = tmp.b + (1 - tmp.b) * roof
+  for (let v = p.v0; v < p.vr; v++) { a[3 * v] = rr; a[3 * v + 1] = rg; a[3 * v + 2] = rb }
+  for (let v = p.vr; v < p.v1; v++) { a[3 * v] = tmp.r; a[3 * v + 1] = tmp.g; a[3 * v + 2] = tmp.b }
+}
+function paintAll() {
+  for (const m of bMeshes) {
+    for (const p of m.userData.parts) paintPart(m.userData, p)
+    m.userData.color.needsUpdate = true
+  }
+  dirty = true
+}
+
+// ---- trees ----------------------------------------------------------------
+const nTrees = D.trees.length / 2
+const trees = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshLambertMaterial({ flatShading: true }), nTrees)
+{
+  const mtx = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), t = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0)
+  const greens = ['#7e9f58', '#8dab63', '#6f9150', '#96b06c']
+  for (let i = 0; i < nTrees; i++) {
+    const r = 2.3 + hash(i) * 1.9
+    s.set(r, r * 1.35, r)
+    t.set(D.trees[2 * i] / 10, r * 1.35 + 1.2, -D.trees[2 * i + 1] / 10)
+    q.setFromAxisAngle(up, hash(i + 0.5) * 6.28)
+    trees.setMatrixAt(i, mtx.compose(t, q, s))
+    trees.setColorAt(i, tmp.set(greens[i % greens.length]))
+  }
+}
+trees.castShadow = trees.receiveShadow = true
+trees.renderOrder = 20
+scene.add(trees)
+
+// ---- labels ---------------------------------------------------------------
+const PRIORITY = { hood: 0, station: 1, water: 2, ctx: 3, street: 4 }
+const labels = D.labels.map(l => {
+  const el = document.createElement('div')
+  el.className = 'lbl ' + l.k
+  el.textContent = l.t
+  $('labels').append(el)
+  return { ...l, el, w: el.offsetWidth, h: el.offsetHeight, at: new THREE.Vector3(l.x, l.k === 'street' ? 16 : l.k === 'water' ? 2 : 34, -l.y), pri: PRIORITY[l.k] * 100 + (l.r || 0) }
+}).sort((a, b) => a.pri - b.pri)
+const proj = new THREE.Vector3()
+function placeLabels() {
+  const on = $('t-labels').checked
+  const vw = innerWidth, vh = innerHeight, taken = []
+  const dist = camera.position.distanceTo(controls.target)
+  for (const l of labels) {
+    let show = on && !(l.k === 'street' && l.r > 9 && dist > 1900 - (l.r - 10) * 45)
+    if (show) {
+      proj.copy(l.at).project(camera)
+      const x = (proj.x + 1) / 2 * vw, y = (1 - proj.y) / 2 * vh
+      show = proj.z < 1 && x > 0 && x < vw && y > 0 && y < vh
+      if (show) {
+        const box = [x - l.w / 2 - 6, y - l.h / 2 - 4, x + l.w / 2 + 6, y + l.h / 2 + 4]
+        show = !taken.some(t => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1])
+        if (show) {
+          taken.push(box)
+          l.el.style.transform = `translate(${Math.round(x - l.w / 2)}px,${Math.round(y - l.h / 2)}px)`
+        }
+      }
+    }
+    l.el.style.opacity = show ? 1 : 0
+  }
+}
+
+// ---- sun ------------------------------------------------------------------
+const LAT = 52.06 * Math.PI / 180, DECL = 23.44 * Math.PI / 180, NOON = 13.72
+function setSun(hour) {
+  const H = (hour - NOON) * 15 * Math.PI / 180
+  const el = Math.asin(Math.sin(LAT) * Math.sin(DECL) + Math.cos(LAT) * Math.cos(DECL) * Math.cos(H))
+  const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(LAT) - Math.tan(DECL) * Math.cos(LAT))
+  sun.position.set(-Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el)).multiplyScalar(3500)
+  const k = Math.min(1, Math.max(0, Math.sin(el) * 2.2))
+  sun.color.set('#ff9a5c').lerp(tmp.set('#fff4e2'), k)
+  sun.intensity = 1.5 + 1.3 * k
+  hemi.intensity = 0.95 + 0.4 * k
+  document.body.style.setProperty('--sky-a', '#' + tmp.set('#f6dcc4').lerp(new THREE.Color('#f7f3ec'), k).getHexString())
+  document.body.style.setProperty('--sky-b', '#' + tmp.set('#c9a994').lerp(new THREE.Color('#d9d2c4'), k).getHexString())
+  const hh = Math.floor(hour), mm = Math.round((hour - hh) * 60)
+  $('sun-out').textContent = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
+  renderer.shadowMap.needsUpdate = true
+  dirty = true
+}
+
+// ---- picking --------------------------------------------------------------
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2()
+let hot = null, pickAt = null, down = false
+function setHot(next) {
+  if (hot && next && hot.ch === next.ch && hot.pand === next.pand) return
+  for (const [h, lift] of [[hot, 0], [next, 0.38]]) {
+    if (!h) continue
+    for (const p of h.ch.parts.slice(h.a, h.b)) paintPart(h.ch, p, lift)
+    const first = h.ch.parts[h.a], last = h.ch.parts[h.b - 1]
+    h.ch.color.addUpdateRange?.(first.v0 * 3, (last.v1 - first.v0) * 3)
+    h.ch.color.needsUpdate = true
+  }
+  hot = next
+  dirty = true
+}
+function pick() {
+  const { x, y } = pickAt
+  pickAt = null
+  mouse.set(x / innerWidth * 2 - 1, 1 - y / innerHeight * 2)
+  ray.setFromCamera(mouse, camera)
+  const hit = ray.intersectObjects(bMeshes, false)[0]
+  const tip = $('tip')
+  if (!hit) { setHot(null); tip.style.opacity = 0; return }
+  const ch = hit.object.userData, parts = ch.parts, at = hit.faceIndex * 3
+  let lo = 0, hi = parts.length - 1
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (parts[mid].i0 <= at) lo = mid; else hi = mid - 1 }
+  const part = parts[lo]
+  let a = lo, b = lo + 1
+  while (a > 0 && parts[a - 1].pand === part.pand) a--
+  while (b < parts.length && parts[b].pand === part.pand) b++
+  setHot({ ch, pand: part.pand, a, b })
+  const top = Math.max(...parts.slice(a, b).map(p => p.h))
+  tip.innerHTML = `<b>${part.yr > 1500 ? 'Built ' + part.yr : 'Year unknown'}</b> · ${top.toFixed(1)} m high<br><span>${part.inside ? 'Laakkwartier' : 'Outside the district'}</span>`
+  const tw = tip.offsetWidth
+  tip.style.transform = `translate(${Math.min(x + 14, innerWidth - tw - 8)}px,${Math.max(8, y - 46)}px)`
+  tip.style.opacity = 1
+}
+canvas.addEventListener('pointermove', e => { if (!down && e.pointerType !== 'touch') pickAt = { x: e.clientX, y: e.clientY } })
+canvas.addEventListener('pointerdown', () => { down = true; pickAt = null; $('tip').style.opacity = 0; stopSpin() })
+addEventListener('pointerup', () => { down = false })
+canvas.addEventListener('pointerleave', () => { pickAt = null; setHot(null); $('tip').style.opacity = 0 })
+canvas.addEventListener('wheel', () => stopSpin(), { passive: true })
+
+// ---- UI -------------------------------------------------------------------
+function stopSpin() { controls.autoRotate = false; $('t-spin').checked = false }
+const fmt = n => n.toLocaleString('en-GB')
+$('s-b').textContent = fmt(D.meta.buildings)
+$('s-p').textContent = fmt(D.meta.population)
+$('s-y').textContent = D.meta.medianYear
+$('s-a').textContent = D.meta.areaHa
+
+function legend() {
+  const r = mode === 'year' ? YEAR : mode === 'height' ? HEIGHT : null
+  $('legend').classList.toggle('on', !!r)
+  if (!r) return
+  $('legend').querySelector('.bar').innerHTML = r.colors.map(c => `<i style="background:${c}"></i>`).join('')
+  const unit = mode === 'height' ? ' m' : ''
+  $('legend').querySelector('.ticks').innerHTML = `<span>&lt; ${r.stops[0]}${unit}</span><span>${r.stops[3]}${unit}</span><span>${r.stops.at(-1)}${unit} +</span>`
+}
+$('mode').addEventListener('click', e => {
+  const b = e.target.closest('button')
+  if (!b) return
+  mode = b.dataset.mode
+  for (const x of $('mode').children) x.setAttribute('aria-pressed', x === b)
+  hot = null
+  legend()
+  paintAll()
+})
+$('sun').addEventListener('input', e => setSun(+e.target.value))
+$('t-labels').addEventListener('change', () => { dirty = viewMoved = true })
+$('t-traffic').addEventListener('change', e => {
+  carMesh.visible = e.target.checked
+  for (const m of flowMeshes) m.visible = e.target.checked
+  $('traffic-field').classList.toggle('off', !e.target.checked)
+  dirty = true
+})
+$('cars-out').textContent = fmt(cars.length) + ' cars'
+const still = matchMedia('(prefers-reduced-motion: reduce)').matches
+$('t-trees').addEventListener('change', e => { trees.visible = e.target.checked; renderer.shadowMap.needsUpdate = true; dirty = true })
+$('t-spin').addEventListener('change', e => { controls.autoRotate = e.target.checked })
+
+let fly = null
+function flyTo(pos, target) {
+  stopSpin()
+  fly = { t: 0, p0: camera.position.clone(), p1: pos, q0: controls.target.clone(), q1: target }
+}
+$('reset').addEventListener('click', () => flyTo(HOME.clone(), new THREE.Vector3()))
+$('north').addEventListener('click', () => {
+  const d = camera.position.clone().sub(controls.target)
+  const flat = Math.hypot(d.x, d.z)
+  flyTo(controls.target.clone().add(new THREE.Vector3(0, d.y, flat)), controls.target.clone())
+})
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false)
+  camera.aspect = innerWidth / innerHeight
+  camera.updateProjectionMatrix()
+  dirty = viewMoved = true
+}
+addEventListener('resize', resize)
+controls.addEventListener('change', () => { dirty = viewMoved = true })
+
+let dirty = true, viewMoved = true, last = performance.now()
+function frame(now) {
+  requestAnimationFrame(frame)
+  const dt = Math.min(0.1, (now - last) / 1000 || 0)
+  last = now
+  if (carMesh.visible && !still && !document.hidden) { moveCars(dt); dirty = true }
+  if (fly) {
+    fly.t = Math.min(1, fly.t + 0.03)
+    const k = fly.t * fly.t * (3 - 2 * fly.t)
+    camera.position.lerpVectors(fly.p0, fly.p1, k)
+    controls.target.lerpVectors(fly.q0, fly.q1, k)
+    if (fly.t === 1) fly = null
+    dirty = true
+  }
+  controls.target.x = Math.min(RX1, Math.max(RX0, controls.target.x))
+  controls.target.z = Math.min(-RY0, Math.max(-RY1, controls.target.z))
+  controls.target.y = 0
+  if (controls.update()) dirty = true
+  if (pickAt) pick()
+  if (!dirty) return
+  dirty = false
+  renderer.render(scene, camera)
+  if (!viewMoved) return
+  viewMoved = false
+  placeLabels()
+  $('needle').style.transform = `rotate(${controls.getAzimuthalAngle()}rad)`
+}
+
+// #x,y,z,tx,tz,mode,hour opens a fixed view
+const view = location.hash.slice(1).split(',')
+if (view.length >= 5 && view.slice(0, 5).every(v => isFinite(+v))) {
+  camera.position.set(+view[0], +view[1], +view[2])
+  controls.target.set(+view[3], 0, +view[4])
+  stopSpin()
+  if (view[5]) { mode = view[5]; for (const x of $('mode').children) x.setAttribute('aria-pressed', x.dataset.mode === mode); legend() }
+  if (isFinite(+view[6]) && view[6]) $('sun').value = view[6]
+}
+
+resize()
+moveCars(0)
+paintAll()
+setSun(+$('sun').value)
+frame(last)
+$('boot').classList.add('done')
+setTimeout(() => $('boot').remove(), 600)
+</script>
+</body>
+</html>
